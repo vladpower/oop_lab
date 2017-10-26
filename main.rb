@@ -5,67 +5,134 @@ class University
     attr_reader :name
     attr_reader :passing_score
     attr_reader :max_count_students
-
+	attr_reader :list_students
+	attr_accessor :msg_events
     # Create the object
     def initialize(attributes = {})
       @name = attributes[:name]
       @passing_score = attributes[:passing_score]
       @max_count_students = attributes[:max_count_students]
-      @listStudents = []
+      @list_students = []
+	  @list_re_exam = []
+	  @msg_events = []
     end
 
-    def apply_student(student)
-        if student.academic_performance >= @passing_score && @listStudents.count() < @max_count_students then
-            accept_student student
+    def apply_student(person, ege_score)
+        if ege_score >= @passing_score && @list_students.count() < @max_count_students then
+            accept_student person
         end
     end
 
     def expel_student(student)
-        @listStudents.delete student
-        student.university = nil
-        student.penalty = 0
+        @list_students.delete student
+		@list_re_exam.delete student
+		student.expelled
     end
-
-    def show_students()
-        puts " "
-        puts "University #{name} (#{@listStudents.length}):"
-        @listStudents.each do |s|
-            puts "#{s.name} #{s.surname} #{s.academic_performance} #{s.penalty} #{s.course}"
-        end
+	
+	def exam
+	    list_students.each do |s|
+		    if s.pass_exam > 0
+			   msg_events.push "#{student_name s.person} не сдал#{fem_end s.person,"а"} экзамен, получив #{s.academic_performance}, и отправляется на переэкзаменовку."
+		       @list_re_exam.push s
+		    else
+			   @msg_events.push "#{student_name s.person} успешно сдал#{fem_end s.person,"а"} экзамен на #{s.academic_performance}."
+			end
+		end
     end
-
-    private def accept_student(student)
-        @listStudents.push student
-        student.university = self
-        student.course = 1
+	
+	def re_exam
+	    @list_re_exam.each do |s|
+		    case s.pass_exam
+			when 0
+			   msg_events.push "#{student_name s.person} успешно пересдал#{fem_end s.person,"а"} экзамен на #{s.academic_performance}."
+			   @list_re_exam.delete s
+			when 2
+			    msg_events.push "#{student_name s.person} не сдал#{fem_end s.person,"а"} экзамен во второй раз, получив #{s.academic_performance} и отправляется на переэкзаменовку."
+			when 3
+			    msg_events.push "#{student_name s.person} не сдал#{fem_end s.person,"а"} экзамен в третий раз, получив #{s.academic_performance}, и отчисляется за неуспеваемость."
+			    expel_student s
+			end
+			   
+		end
     end
+	
+	def end_year
+	    @list_students.each do |s|
+		    s.next_course
+			if s.finished?
+			   msg_events.push "#{student_name s.person} успешно закончил#{fem_end s.person,"а"} обучение."
+			else
+			   msg_events.push "#{student_name s.person} теперь учится на #{s.course} курсе"
+			end
+			
+		end
+	end
 
-    
+    private def accept_student(person)
+	    student = Student.new person, self
+        @list_students.push student
+		person.student = student
+    end
 
 end
 
-class Student
+class Person
     attr_reader :male #bool
     attr_reader :name
     attr_reader :surname
-    attr_accessor :university
+	attr_accessor :student
+	attr_accessor :finished #bool
+	
+	def initialize(attributes = {})
+	    @male = attributes[:male]
+		@name = attributes[:name]
+		@surname = attributes[:surname]
+		@student = nil
+    end
+	
+	def studying?
+        @student
+    end
+	
+	
+	
+	def university
+	    @student.university
+	end
+	
+	def choose_universities(univers)
+        univers.sample(3)
+    end
+
+    def try_enroll(univer, ege_score)
+        if !studying?
+            univer.apply_student self, ege_score
+        end
+    end
+
+    def drop_out
+        if studying?
+            university.expel_student @student
+        end
+    end
+	
+
+	
+	
+end
+
+class Student
+    attr_reader   :person
     attr_accessor :academic_performance
     attr_accessor :course
     attr_accessor :penalty
-    attr_accessor :finished #bool
-
-    # Create the object
-    def initialize(attributes = {})
-        @male = attributes[:male]
-        @name = attributes[:name]
-        @surname = attributes[:surname]
+	attr_reader :university
+    
+    def initialize(person, university)
+	    @person = person
+		@university = university
         @penalty = 0
-        @finished = false
-        @course = 0
-    end
-
-    def studying?
-        @university
+        @course = 1
     end
 
     def passed?
@@ -75,55 +142,33 @@ class Student
     def failed?
         !passed?
     end
-
-    def exam() # gaussian distribution
-        value = 0
-        12.times do
-            value+=rand();
-        end
-        value-=6;
-        score = (15*value+65).to_int
-        if score > 100 then score = 100 end
-        if score < 0 then score = 0 end
-        @academic_performance = score
+	
+	def finished?
+        @person.finished
     end
 
-    def choose_universities(univers)
-        univers.sample(3)
-    end
-
-    def try_enroll(univer)
-        if !studying?
-            univer.apply_student self
-        end
-    end
-
-    def drop_out()
-        if studying?
-            university.expel_student self
-        end
-    end
-
-    def check_performance()
-        if passed?
-            @penalty = 0
-        else
-            @penalty += 1
-            if penalty >= 3
-                drop_out
-            end
-        end
-    end
+	def pass_exam #rerurn 0 if exam passed
+	    @academic_performance = rand_exam
+		if @academic_performance >= university.passing_score
+		   @penalty = 0
+		else
+		   @penalty += 1
+		end
+	end
 
     def next_course
         if @course < 4
             @course += 1
         else
-            @finished = true
-            drop_out
+            @person.finished = true
         end
     end
+	
+	def expelled
+	   @person.student = nil
+	end
 end
+
 
 class Randomizer #static
     @@male_names = CSV.read('male_names.txt')
@@ -149,14 +194,57 @@ class Randomizer #static
         @@female_surnames.sample[0]
     end
 
-    def self.rand_student
+    def self.rand_person
         m = [true, false].sample
         n = m ? rand_male_name : rand_female_name
         s =  m ? rand_male_surname : rand_female_surname
-        Student.new(male: m, name: n, surname: s)
+        Person.new(male: m, name: n, surname: s)
     end
 end
 
+def rand_exam()
+    value = 0
+    12.times do
+        value+=rand();
+    end
+    value-=6;
+    score = (15*value+65).to_int
+    if score > 100 then score = 100 end
+    if score < 0 then score = 0 end
+    score
+end
+
+def show_students(university)
+    list = university.list_students
+    puts " "
+    puts "Университет #{university.name} (#{list.length}):"
+    list.each do |s|
+        puts "#{s.person.name} #{s.person.surname} #{s.academic_performance} #{s.penalty} #{s.course}"
+    end
+ end
+ 
+ def show_msg_events(university)
+    list = university.msg_events
+	if list.count > 0
+	    puts "\nСобытия в университете #{university.name}:\n"
+        list.each do |e|
+            puts e
+        end
+	    list.clear
+	end
+    
+ end
+ 
+ def fem_end(student,str)
+    if !student.male
+
+	    str
+	end
+ end
+ 
+ def student_name(student)
+    "Студент#{fem_end student,"ка"} #{student.surname} #{student.name}"
+ end
 
 print "Введите количество студентов: "
 student_count = gets.to_i
@@ -167,40 +255,45 @@ univers = Array.new(5) {|index| University.new name: univer_names[index],
     passing_score: 50+index*5,
     max_count_students: 25
 }
-students = Array.new(student_count) {Randomizer.rand_student()}
+students = Array.new(student_count) {Randomizer.rand_person()}
 
 simulated_time.times do |t| # mounths
-
+    puts "\n#{t+1} месяц:"
+	univers.each do |u|
+	    if(t % 3) == 0
+		    u.exam
+		else
+		    u.re_exam
+		end
+		if(t % 12) == 0
+		    u.end_year
+		end
+        show_msg_events u
+    end
     students.each do |s|
         if s.studying?
-            if (t % 3) == 0
-                s.exam
-                s.check_performance
-            else
-                if s.failed?
-                    s.exam
-                    s.check_performance
-                end
-            end
-            if (t % 12) == 0 && s.studying?
-                s.next_course
-            end
-
+		    if Random.rand(200)==0 
+			    puts "#{student_name s} покинул#{fem_end s,"а"} университет #{s.university.name} по собственному желанию."
+			    s.drop_out
+				
+		    end
         else
-            if (t % 12) == 0
-                s.exam
+            if (t % 12) == 0 && !s.finished
+			    ege_score = rand_exam
                 choosen_univers = s.choose_universities univers
                 choosen_univers.each do |u|
-                    s.try_enroll u
+                    s.try_enroll u, ege_score
                 end
+				print "#{student_name s} сдал#{fem_end s,"а"} ЕГЭ на #{ege_score} и "
+				if s.studying?
+				   puts "поступил#{fem_end s,"а"} в университет #{s.university.name}."
+				else
+				   puts "никуда не поступил#{fem_end s,"а"}"
+				end
             end
         end
-
-        #puts "#{s.name} #{s.surname} #{s.academic_performance}"
     end
-    puts "\n#{t+1} месяц:"
-    univers.each do |u|
-        u.show_students
-    end
+    
+	gets
 
 end
